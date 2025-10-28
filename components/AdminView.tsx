@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useEffect } from 'react';
 import type { TimeLog, User, Shift, GeolocationSettings } from '../types';
 import { POSITIONS, STAFF_TYPES, WORK_GROUPS } from '../constants';
 import { SettingsIcon, UserPlusIcon, ReportIcon, DownloadIcon } from './icons';
@@ -7,24 +8,30 @@ import { SettingsIcon, UserPlusIcon, ReportIcon, DownloadIcon } from './icons';
 const XLSX = window.XLSX;
 
 
-const UserManagement = ({ users, setUsers }: { users: User[], setUsers: React.Dispatch<React.SetStateAction<User[]>> }) => {
+const UserManagement = ({ users, onAddUser }: { users: User[], onAddUser: (user: Omit<User, 'id' | 'role'>) => Promise<void> }) => {
     const [newUser, setNewUser] = useState({
         username: '', password: '', firstName: '', lastName: '', 
         position: POSITIONS[0], staffType: STAFF_TYPES[0], workGroup: WORK_GROUPS[0]
     });
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleAddUser = (e: React.FormEvent) => {
+    const handleAddUser = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newUser.username && newUser.password && newUser.firstName && newUser.lastName) {
-            setUsers(prev => [...prev, {
-                ...newUser,
-                id: `user_${Date.now()}`,
-                role: 'employee',
-            }]);
-            setNewUser({
-                username: '', password: '', firstName: '', lastName: '', 
-                position: POSITIONS[0], staffType: STAFF_TYPES[0], workGroup: WORK_GROUPS[0]
-            });
+            setIsLoading(true);
+            setError(null);
+            try {
+                await onAddUser(newUser);
+                setNewUser({
+                    username: '', password: '', firstName: '', lastName: '', 
+                    position: POSITIONS[0], staffType: STAFF_TYPES[0], workGroup: WORK_GROUPS[0]
+                });
+            } catch (err: any) {
+                setError(err.message || "เกิดข้อผิดพลาดในการเพิ่มผู้ใช้");
+            } finally {
+                setIsLoading(false);
+            }
         }
     };
 
@@ -36,6 +43,7 @@ const UserManagement = ({ users, setUsers }: { users: User[], setUsers: React.Di
         <div className="space-y-6">
             <form onSubmit={handleAddUser} className="bg-white p-6 rounded-lg shadow-md space-y-4">
                 <h3 className="text-xl font-semibold text-gray-700">เพิ่มผู้ใช้งานใหม่</h3>
+                {error && <div className="p-3 text-sm text-red-700 bg-red-100 rounded-md">{error}</div>}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input type="text" name="firstName" value={newUser.firstName} onChange={handleInputChange} placeholder="ชื่อ" className="w-full px-3 py-2 border rounded-md" required />
                     <input type="text" name="lastName" value={newUser.lastName} onChange={handleInputChange} placeholder="นามสกุล" className="w-full px-3 py-2 border rounded-md" required />
@@ -51,8 +59,8 @@ const UserManagement = ({ users, setUsers }: { users: User[], setUsers: React.Di
                         {WORK_GROUPS.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                 </div>
-                <button type="submit" className="w-full bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 transition duration-300 flex items-center justify-center gap-2">
-                    <UserPlusIcon className="w-5 h-5" /> เพิ่มผู้ใช้งาน
+                <button type="submit" disabled={isLoading} className="w-full bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 transition duration-300 flex items-center justify-center gap-2 disabled:bg-primary-300">
+                    <UserPlusIcon className="w-5 h-5" /> {isLoading ? 'กำลังเพิ่ม...' : 'เพิ่มผู้ใช้งาน'}
                 </button>
             </form>
             <div className="bg-white p-6 rounded-lg shadow-md">
@@ -82,18 +90,29 @@ const UserManagement = ({ users, setUsers }: { users: User[], setUsers: React.Di
     );
 };
 
-const Settings = ({ shifts, setShifts, geoSettings, setGeoSettings }: { shifts: Shift[], setShifts: React.Dispatch<React.SetStateAction<Shift[]>>, geoSettings: GeolocationSettings, setGeoSettings: React.Dispatch<React.SetStateAction<GeolocationSettings>> }) => {
-    
-    const handleShiftChange = (id: string, field: keyof Shift, value: string | number) => {
+const Settings = ({ initialShifts, initialGeoSettings, onSaveShifts, onSaveGeoSettings }: {
+    initialShifts: Shift[],
+    initialGeoSettings: GeolocationSettings,
+    onSaveShifts: (shifts: Shift[]) => Promise<void>,
+    onSaveGeoSettings: (settings: GeolocationSettings) => Promise<void>
+}) => {
+    const [shifts, setShifts] = useState(initialShifts);
+    const [geoSettings, setGeoSettings] = useState(initialGeoSettings);
+    const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => { setShifts(initialShifts) }, [initialShifts]);
+    useEffect(() => { setGeoSettings(initialGeoSettings) }, [initialGeoSettings]);
+
+    const handleShiftChange = (id: number | string, field: keyof Shift, value: string | number) => {
         setShifts(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
     };
 
     const handleGeoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         if (name === 'latitude' || name === 'longitude') {
-            setGeoSettings(prev => ({ ...prev, center: { ...prev.center!, [name]: parseFloat(value) } }));
+            setGeoSettings(prev => ({ ...prev, center: { ...prev.center!, [name]: parseFloat(value) || 0 } }));
         } else {
-            setGeoSettings(prev => ({ ...prev, [name]: parseInt(value, 10) }));
+            setGeoSettings(prev => ({ ...prev, [name]: parseInt(value, 10) || 0 }));
         }
     };
 
@@ -101,6 +120,20 @@ const Settings = ({ shifts, setShifts, geoSettings, setGeoSettings }: { shifts: 
         navigator.geolocation.getCurrentPosition(pos => {
             setGeoSettings(prev => ({...prev, center: { latitude: pos.coords.latitude, longitude: pos.coords.longitude }}));
         });
+    };
+
+    const handleSave = async () => {
+        setIsLoading(true);
+        try {
+            await onSaveGeoSettings(geoSettings);
+            await onSaveShifts(shifts);
+            alert("บันทึกการตั้งค่าสำเร็จ!");
+        } catch (error) {
+            alert("เกิดข้อผิดพลาดในการบันทึกการตั้งค่า");
+            console.error(error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -135,12 +168,17 @@ const Settings = ({ shifts, setShifts, geoSettings, setGeoSettings }: { shifts: 
                             <input 
                                 type="number" 
                                 value={shift.lateGracePeriod} 
-                                onChange={(e) => handleShiftChange(shift.id, 'lateGracePeriod', parseInt(e.target.value, 10))}
+                                onChange={(e) => handleShiftChange(shift.id, 'lateGracePeriod', parseInt(e.target.value, 10) || 0)}
                                 className="w-full mt-1 px-3 py-2 border rounded-md"
                             />
                         </div>
                     </div>
                 ))}
+            </div>
+            <div className="mt-6">
+                <button onClick={handleSave} disabled={isLoading} className="w-full bg-primary-600 text-white py-3 px-4 rounded-md hover:bg-primary-700 transition duration-300 disabled:bg-primary-300">
+                    {isLoading ? "กำลังบันทึก..." : "บันทึกการตั้งค่าทั้งหมด"}
+                </button>
             </div>
         </div>
     );
@@ -152,6 +190,7 @@ const Report = ({ logs, users, shifts }: { logs: TimeLog[], users: User[], shift
     const [year, setYear] = useState(new Date().getFullYear());
 
     const reportData = useMemo(() => {
+        if (!users.length || !shifts.length) return [];
         const userMap = new Map(users.map(u => [u.id, u]));
         const dailyLogs: { [key: string]: { in: TimeLog | null, out: TimeLog | null } } = {};
 
@@ -177,10 +216,17 @@ const Report = ({ logs, users, shifts }: { logs: TimeLog[], users: User[], shift
             const inTime = new Date(inLog.timestamp);
             const inHour = inTime.getHours();
 
-            let shift: Shift;
-            if (inHour >= 4 && inHour < 12) shift = shifts[0]; // 8:30 shift
-            else if (inHour >= 12 && inHour < 20) shift = shifts[1]; // 16:30 shift
-            else shift = shifts[2]; // 00:30 shift
+            let shift: Shift | undefined;
+            // This logic might need refinement for edge cases around midnight
+            const morningShift = shifts.find(s => s.name === 'กะเช้า'); // 08:30
+            const afternoonShift = shifts.find(s => s.name === 'กะบ่าย'); // 16:30
+            const nightShift = shifts.find(s => s.name === 'กะดึก'); // 00:30
+
+            if (inHour >= 4 && inHour < 12 && morningShift) shift = morningShift;
+            else if (inHour >= 12 && inHour < 20 && afternoonShift) shift = afternoonShift;
+            else shift = nightShift;
+            
+            if (!shift) return null; // Or handle as an error
 
             const [startHour, startMinute] = shift.startTime.split(':').map(Number);
             const shiftStartTime = new Date(inLog.timestamp);
@@ -197,16 +243,15 @@ const Report = ({ logs, users, shifts }: { logs: TimeLog[], users: User[], shift
                 clockOutDisplay = new Date(outLog.timestamp).toLocaleTimeString('th-TH');
                 ipAddressOut = outLog.ipAddress || '-';
             } else {
-                // Check for auto-clock-out condition
                 const [endHour, endMinute] = shift.endTime.split(':').map(Number);
                 const shiftEndTime = new Date(inLog.timestamp);
                 shiftEndTime.setHours(endHour, endMinute, 0, 0);
 
-                if (endHour < startHour) {
+                if (endHour < startHour) { // Shift crosses midnight
                     shiftEndTime.setDate(shiftEndTime.getDate() + 1);
                 }
 
-                if (new Date() > shiftEndTime) {
+                if (new Date().getTime() > shiftEndTime.getTime()) {
                     statusDisplay = 'ไม่ลงเวลาออก';
                 }
             }
@@ -294,15 +339,15 @@ const Report = ({ logs, users, shifts }: { logs: TimeLog[], users: User[], shift
 };
 
 
-export const AdminView = ({ users, setUsers, logs, shifts, setShifts, geoSettings, setGeoSettings, onLogout }: {
+export const AdminView = ({ users, logs, shifts, geoSettings, onLogout, onAddUser, onSaveShifts, onSaveGeoSettings }: {
     users: User[],
-    setUsers: React.Dispatch<React.SetStateAction<User[]>>,
     logs: TimeLog[],
     shifts: Shift[],
-    setShifts: React.Dispatch<React.SetStateAction<Shift[]>>,
     geoSettings: GeolocationSettings,
-    setGeoSettings: React.Dispatch<React.SetStateAction<GeolocationSettings>>,
-    onLogout: () => void
+    onLogout: () => void,
+    onAddUser: (user: Omit<User, 'id' | 'role'>) => Promise<void>,
+    onSaveShifts: (shifts: Shift[]) => Promise<void>,
+    onSaveGeoSettings: (settings: GeolocationSettings) => Promise<void>,
 }) => {
     const [activeTab, setActiveTab] = useState('report');
 
@@ -339,8 +384,8 @@ export const AdminView = ({ users, setUsers, logs, shifts, setShifts, geoSetting
             </div>
 
             <div>
-                {activeTab === 'users' && <UserManagement users={users} setUsers={setUsers} />}
-                {activeTab === 'settings' && <Settings shifts={shifts} setShifts={setShifts} geoSettings={geoSettings} setGeoSettings={setGeoSettings} />}
+                {activeTab === 'users' && <UserManagement users={users} onAddUser={onAddUser} />}
+                {activeTab === 'settings' && <Settings initialShifts={shifts} initialGeoSettings={geoSettings} onSaveShifts={onSaveShifts} onSaveGeoSettings={onSaveGeoSettings} />}
                 {activeTab === 'report' && <Report logs={logs} users={users} shifts={shifts} />}
             </div>
         </div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import type { User, TimeLog, GeolocationSettings } from '../types';
 import { useGeolocation } from '../hooks/useGeolocation';
@@ -13,12 +14,12 @@ interface ConfirmationMessage {
     distance: number;
 }
 
-export const EmployeeView = ({ user, logs, setLogs, onLogout, geoSettings }: {
+export const EmployeeView = ({ user, logs, onLogout, geoSettings, onClock }: {
     user: User,
     logs: TimeLog[],
-    setLogs: React.Dispatch<React.SetStateAction<TimeLog[]>>,
     onLogout: () => void,
-    geoSettings: GeolocationSettings
+    geoSettings: GeolocationSettings,
+    onClock: (log: Omit<TimeLog, 'id'>) => Promise<void>
 }) => {
     const [time, setTime] = useState(new Date());
     const [confirmationMessage, setConfirmationMessage] = useState<ConfirmationMessage | null>(null);
@@ -42,7 +43,7 @@ export const EmployeeView = ({ user, logs, setLogs, onLogout, geoSettings }: {
         const timeDiff = Date.now() - userLastLog.timestamp;
         const fourHoursInMillis = 4 * 60 * 60 * 1000;
         return timeDiff >= fourHoursInMillis;
-    }, [isClockedIn, userLastLog, time]); // re-evaluate when time changes
+    }, [isClockedIn, userLastLog, time]);
 
     const distance = useMemo(() => {
         if (location.latitude && location.longitude && geoSettings.center) {
@@ -91,8 +92,7 @@ export const EmployeeView = ({ user, logs, setLogs, onLogout, geoSettings }: {
             console.warn('Could not fetch IP address:', error);
         }
 
-        const newLog: TimeLog = {
-            id: `log_${Date.now()}`,
+        const newLogData = {
             userId: user.id,
             timestamp: Date.now(),
             type,
@@ -102,16 +102,21 @@ export const EmployeeView = ({ user, logs, setLogs, onLogout, geoSettings }: {
             },
             ipAddress,
         };
-        setLogs(prev => [...prev, newLog]);
 
-        setConfirmationMessage({
-            type,
-            time: new Date(newLog.timestamp).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
-            name: `${user.firstName} ${user.lastName}`,
-            position: user.position,
-            workGroup: user.workGroup,
-            distance: distance !== null ? Math.round(distance) : 0,
-        });
+        try {
+            await onClock(newLogData);
+            setConfirmationMessage({
+                type,
+                time: new Date(newLogData.timestamp).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+                name: `${user.firstName} ${user.lastName}`,
+                position: user.position,
+                workGroup: user.workGroup,
+                distance: distance !== null ? Math.round(distance) : 0,
+            });
+        } catch (error) {
+            alert("เกิดข้อผิดพลาดในการบันทึกเวลา");
+            console.error(error);
+        }
     };
 
     if (confirmationMessage) {

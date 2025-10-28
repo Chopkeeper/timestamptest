@@ -1,6 +1,6 @@
 
 export interface User {
-  id: string;
+  id: number | string;
   username: string;
   password?: string; // Optional for display
   firstName: string;
@@ -12,8 +12,8 @@ export interface User {
 }
 
 export interface TimeLog {
-  id: string;
-  userId: string;
+  id: number | string;
+  userId: number | string;
   timestamp: number;
   type: 'in' | 'out';
   location: {
@@ -24,7 +24,7 @@ export interface TimeLog {
 }
 
 export interface Shift {
-  id: string;
+  id: number | string;
   name: string;
   startTime: string; // HH:mm
   endTime: string; // HH:mm

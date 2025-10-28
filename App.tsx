@@ -5,70 +5,155 @@ import { LoginView, RegisterView } from './components/AuthView';
 import { EmployeeView } from './components/EmployeeView';
 import { AdminView } from './components/AdminView';
 
-// Custom hook for persisting state to localStorage
-function useStickyState<T>(defaultValue: T, key: string): [T, React.Dispatch<React.SetStateAction<T>>] {
-    const [value, setValue] = useState<T>(() => {
-        const stickyValue = window.localStorage.getItem(key);
-        return stickyValue !== null
-            ? JSON.parse(stickyValue)
-            : defaultValue;
-    });
-    useEffect(() => {
-        window.localStorage.setItem(key, JSON.stringify(value));
-    }, [key, value]);
-    return [value, setValue];
-}
+const API_URL = 'http://localhost:3001/api'; // URL ของ Backend Server
 
 const App = () => {
-    const [users, setUsers] = useStickyState<User[]>([
-        { id: 'admin', username: 'admin', password: 'password', firstName: 'Admin', lastName: 'User', position: 'System Admin', staffType: 'ข้าราชการ', workGroup: 'กลุ่มงานบริหาร', role: 'admin' }
-    ], 'app-users');
-    
-    const [timeLogs, setTimeLogs] = useStickyState<TimeLog[]>([], 'app-time-logs');
-    
-    const [shifts, setShifts] = useStickyState<Shift[]>([
-        { id: 'shift1', name: 'กะเช้า', startTime: '08:30', endTime: '16:30', lateGracePeriod: 15 },
-        { id: 'shift2', name: 'กะบ่าย', startTime: '16:30', endTime: '00:30', lateGracePeriod: 15 },
-        { id: 'shift3', name: 'กะดึก', startTime: '00:30', endTime: '08:30', lateGracePeriod: 15 },
-    ], 'app-shifts');
-    
-    const [geoSettings, setGeoSettings] = useStickyState<GeolocationSettings>({
-        center: null,
-        radius: 100 // default 100 meters
-    }, 'app-geo-settings');
+    const [users, setUsers] = useState<User[]>([]);
+    const [timeLogs, setTimeLogs] = useState<TimeLog[]>([]);
+    const [shifts, setShifts] = useState<Shift[]>([]);
+    const [geoSettings, setGeoSettings] = useState<GeolocationSettings>({ center: null, radius: 100 });
 
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [currentUser, setCurrentUser] = useState<User | null>(() => {
+        const savedUser = sessionStorage.getItem('currentUser');
+        return savedUser ? JSON.parse(savedUser) : null;
+    });
     const [authError, setAuthError] = useState<string | null>(null);
     const [currentView, setCurrentView] = useState<'login' | 'register'>('login');
+    const [isLoading, setIsLoading] = useState<boolean>(true);
 
-    const handleLogin = useCallback((username: string, password: string): void => {
-        const user = users.find(u => u.username === username && u.password === password);
-        if (user) {
-            setCurrentUser(user);
-            setAuthError(null);
-        } else {
-            setAuthError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    // --- Data Fetching ---
+    const fetchDataForUser = useCallback(async (user: User) => {
+        setIsLoading(true);
+        try {
+            if (user.role === 'admin') {
+                const res = await fetch(`${API_URL}/data/all`);
+                if (!res.ok) throw new Error('Failed to fetch admin data');
+                const data = await res.json();
+                setUsers(data.users);
+                setTimeLogs(data.logs);
+                setShifts(data.shifts);
+                setGeoSettings(data.geoSettings);
+            } else {
+                const res = await fetch(`${API_URL}/data/employee/${user.id}`);
+                if (!res.ok) throw new Error('Failed to fetch employee data');
+                const data = await res.json();
+                setTimeLogs(data.logs);
+                setShifts(data.shifts);
+                setGeoSettings(data.geoSettings);
+            }
+        } catch (error: any) {
+            console.error("Fetch data error:", error);
+            setAuthError(error.message);
+        } finally {
+            setIsLoading(false);
         }
-    }, [users]);
+    }, []);
+
+    useEffect(() => {
+        if (currentUser) {
+            fetchDataForUser(currentUser);
+        } else {
+            setIsLoading(false);
+        }
+    }, [currentUser, fetchDataForUser]);
+
+
+    // --- API Handlers ---
+    const handleLogin = useCallback(async (username: string, password: string): Promise<void> => {
+        try {
+            setAuthError(null);
+            const response = await fetch(`${API_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Login failed');
+            
+            setCurrentUser(data);
+            sessionStorage.setItem('currentUser', JSON.stringify(data));
+        } catch (error: any) {
+            setAuthError(error.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+        }
+    }, []);
     
     const handleLogout = useCallback((): void => {
         setCurrentUser(null);
+        sessionStorage.removeItem('currentUser');
     }, []);
 
-    const handleRegister = useCallback((userData: Omit<User, 'id' | 'role'>): void => {
-        if (users.some(u => u.username === userData.username)) {
-            setAuthError('ชื่อผู้ใช้นี้มีอยู่แล้ว');
-            return;
+    const handleRegister = useCallback(async (userData: Omit<User, 'id' | 'role'>): Promise<void> => {
+        try {
+            setAuthError(null);
+            const response = await fetch(`${API_URL}/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userData),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Registration failed');
+           
+            alert("สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ");
+            setCurrentView('login');
+        } catch (error: any) {
+             setAuthError(error.message || 'ชื่อผู้ใช้นี้มีอยู่แล้ว');
         }
-        const newUser: User = {
-            ...userData,
-            id: `user_${Date.now()}`,
-            role: 'employee',
-        };
-        setUsers(prev => [...prev, newUser]);
-        setCurrentUser(newUser); // Auto-login after registration
-        setAuthError(null);
-    }, [users, setUsers]);
+    }, []);
+    
+    const handleAddUserByAdmin = useCallback(async (userData: Omit<User, 'id' | 'role'>): Promise<void> => {
+         try {
+            const response = await fetch(`${API_URL}/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userData),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to add user');
+            
+            setUsers(prev => [...prev, data]); // Add new user to local state
+        } catch (error: any) {
+            console.error(error);
+            throw error; // re-throw to be caught in component
+        }
+    }, []);
+
+    const handleClock = useCallback(async (logData: Omit<TimeLog, 'id'>): Promise<void> => {
+        const response = await fetch(`${API_URL}/timelogs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(logData),
+        });
+        const newLog = await response.json();
+        if (!response.ok) throw new Error(newLog.error || 'Failed to clock in/out');
+
+        setTimeLogs(prev => [...prev, newLog]);
+    }, []);
+    
+    const handleSaveGeoSettings = useCallback(async (settings: GeolocationSettings): Promise<void> => {
+        const response = await fetch(`${API_URL}/settings/geo`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings),
+        });
+        if (!response.ok) throw new Error('Failed to save geo settings');
+        setGeoSettings(settings);
+    }, []);
+
+    const handleSaveShifts = useCallback(async (updatedShifts: Shift[]): Promise<void> => {
+        const response = await fetch(`${API_URL}/settings/shifts`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedShifts),
+        });
+        if (!response.ok) throw new Error('Failed to save shift settings');
+        setShifts(updatedShifts);
+    }, []);
+
+
+    // --- View Rendering ---
+    if (isLoading) {
+        return <div className="flex items-center justify-center min-h-screen">กำลังโหลด...</div>;
+    }
 
     if (!currentUser) {
         if (currentView === 'register') {
@@ -88,22 +173,22 @@ const App = () => {
     if (currentUser.role === 'admin') {
         return <AdminView 
             users={users}
-            setUsers={setUsers}
             logs={timeLogs}
             shifts={shifts}
-            setShifts={setShifts}
             geoSettings={geoSettings}
-            setGeoSettings={setGeoSettings}
             onLogout={handleLogout}
+            onAddUser={handleAddUserByAdmin}
+            onSaveGeoSettings={handleSaveGeoSettings}
+            onSaveShifts={handleSaveShifts}
         />;
     }
     
     return <EmployeeView 
                 user={currentUser} 
                 logs={timeLogs} 
-                setLogs={setTimeLogs}
                 onLogout={handleLogout}
                 geoSettings={geoSettings}
+                onClock={handleClock}
             />;
 };
 
