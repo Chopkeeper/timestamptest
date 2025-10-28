@@ -1,0 +1,200 @@
+// server.js
+// นี่คือ Backend Server ที่สร้างด้วย Node.js และ Express
+// เพื่อทำงานร่วมกับ Frontend ที่มีอยู่
+
+// --- 1. การนำเข้า Dependencies ---
+const express = require('express');
+const mysql = require('mysql2/promise');
+const cors = require('cors');
+const bcrypt = require('bcryptjs');
+require('dotenv').config(); // เพื่อใช้ตัวแปรจากไฟล์ .env
+
+// --- 2. การตั้งค่าพื้นฐาน ---
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middlewares
+app.use(cors()); // อนุญาตการเชื่อมต่อจาก Origin อื่น (Frontend)
+app.use(express.json()); // แปลง Request Body ที่เป็น JSON
+
+// --- 3. การเชื่อมต่อฐานข้อมูล MySQL ---
+// ใช้ข้อมูลจากไฟล์ .env เพื่อความปลอดภัย
+const dbPool = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'time_attendance_db',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
+
+// --- 4. API Endpoints ---
+
+// ฟังก์ชันสำหรับจัดการ Error
+const handleError = (res, error) => {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error', message: error.message });
+};
+
+// [POST] /api/auth/register - สำหรับสมัครสมาชิกใหม่
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { username, password, firstName, lastName, position, staffType, workGroup } = req.body;
+        
+        // ตรวจสอบว่ามี username นี้ในระบบแล้วหรือไม่
+        const [users] = await dbPool.execute('SELECT id FROM users WHERE username = ?', [username]);
+        if (users.length > 0) {
+            return res.status(409).json({ error: 'Username already exists' });
+        }
+        
+        // เข้ารหัสรหัสผ่าน
+        const hashedPassword = await bcrypt.hash(password, 10);
+        
+        // เพิ่มผู้ใช้ใหม่ลงในฐานข้อมูล
+        const [result] = await dbPool.execute(
+            'INSERT INTO users (username, password, firstName, lastName, position, staffType, workGroup, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [username, hashedPassword, firstName, lastName, position, staffType, workGroup, 'employee']
+        );
+        
+        // ส่งข้อมูลผู้ใช้ใหม่กลับไป (โดยไม่รวมรหัสผ่าน)
+        const newUser = { id: result.insertId, username, firstName, lastName, position, staffType, workGroup, role: 'employee' };
+        res.status(201).json(newUser);
+
+    } catch (error) {
+        handleError(res, error);
+    }
+});
+
+
+// [POST] /api/auth/login - สำหรับเข้าสู่ระบบ
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const [rows] = await dbPool.execute('SELECT * FROM users WHERE username = ?', [username]);
+        
+        if (rows.length === 0) {
+            return res.status(401).json({ error: 'Invalid username or password' });
+        }
+        
+        const user = rows[0];
+        const isPasswordMatch = await bcrypt.compare(password, user.password);
+        
+        if (!isPasswordMatch) {
+            return res.status(401).json({ error: 'Invalid username or password' });
+        }
+        
+        // ลบรหัสผ่านก่อนส่งข้อมูลกลับไป
+        delete user.password;
+        res.json(user);
+
+    } catch (error) {
+        handleError(res, error);
+    }
+});
+
+
+// [GET] /api/data/all - ดึงข้อมูลทั้งหมดที่จำเป็นสำหรับ Admin
+app.get('/api/data/all', async (req, res) => {
+    try {
+        const [users] = await dbPool.execute('SELECT id, username, firstName, lastName, position, staffType, workGroup, role FROM users');
+        const [logs] = await dbPool.execute('SELECT * FROM time_logs');
+        const [shifts] = await dbPool.execute('SELECT shiftId as id, name, TIME_FORMAT(startTime, "%H:%i") as startTime, TIME_FORMAT(endTime, "%H:%i") as endTime, lateGracePeriod FROM shifts');
+        const [settingsRows] = await dbPool.execute('SELECT centerLatitude as latitude, centerLongitude as longitude, radius FROM settings WHERE id = 1');
+        
+        const settings = {
+            center: (settingsRows[0].latitude && settingsRows[0].longitude) 
+                ? { latitude: parseFloat(settingsRows[0].latitude), longitude: parseFloat(settingsRows[0].longitude) } 
+                : null,
+            radius: settingsRows[0].radius
+        };
+
+        res.json({ users, logs, shifts, geoSettings: settings });
+    } catch (error) {
+        handleError(res, error);
+    }
+});
+
+// [GET] /api/data/employee/:userId - ดึงข้อมูลสำหรับพนักงาน
+app.get('/api/data/employee/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const [logs] = await dbPool.execute('SELECT * FROM time_logs WHERE userId = ?', [userId]);
+        const [shifts] = await dbPool.execute('SELECT shiftId as id, name, TIME_FORMAT(startTime, "%H:%i") as startTime, TIME_FORMAT(endTime, "%H:%i") as endTime, lateGracePeriod FROM shifts');
+        const [settingsRows] = await dbPool.execute('SELECT centerLatitude as latitude, centerLongitude as longitude, radius FROM settings WHERE id = 1');
+        
+        const settings = {
+            center: (settingsRows[0].latitude && settingsRows[0].longitude) 
+                ? { latitude: parseFloat(settingsRows[0].latitude), longitude: parseFloat(settingsRows[0].longitude) } 
+                : null,
+            radius: settingsRows[0].radius
+        };
+
+        res.json({ logs, shifts, geoSettings: settings });
+    } catch (error) {
+        handleError(res, error);
+    }
+});
+
+
+// [POST] /api/timelogs - บันทึกเวลาเข้า/ออกงาน
+app.post('/api/timelogs', async (req, res) => {
+    try {
+        const { userId, timestamp, type, location, ipAddress } = req.body;
+        const { latitude, longitude } = location;
+        
+        const [result] = await dbPool.execute(
+            'INSERT INTO time_logs (userId, timestamp, type, latitude, longitude, ipAddress) VALUES (?, ?, ?, ?, ?, ?)',
+            [userId, timestamp, type, latitude, longitude, ipAddress]
+        );
+        
+        const newLog = { id: result.insertId, userId, timestamp, type, location, ipAddress };
+        res.status(201).json(newLog);
+
+    } catch (error) {
+        handleError(res, error);
+    }
+});
+
+
+// [PUT] /api/settings/geo - อัปเดตการตั้งค่าตำแหน่ง
+app.put('/api/settings/geo', async (req, res) => {
+    try {
+        const { center, radius } = req.body;
+        await dbPool.execute(
+            'UPDATE settings SET centerLatitude = ?, centerLongitude = ?, radius = ? WHERE id = 1',
+            [center ? center.latitude : null, center ? center.longitude : null, radius]
+        );
+        res.json({ message: 'Geolocation settings updated successfully' });
+    } catch (error) {
+        handleError(res, error);
+    }
+});
+
+// [PUT] /api/settings/shifts - อัปเดตการตั้งค่ากะ
+app.put('/api/settings/shifts', async (req, res) => {
+    try {
+        const shifts = req.body; // array of shift objects
+        const connection = await dbPool.getConnection();
+        await connection.beginTransaction();
+        
+        for (const shift of shifts) {
+            await connection.execute(
+                'UPDATE shifts SET lateGracePeriod = ? WHERE shiftId = ?',
+                [shift.lateGracePeriod, shift.id]
+            );
+        }
+        
+        await connection.commit();
+        connection.release();
+        res.json({ message: 'Shift settings updated successfully' });
+    } catch (error) {
+        handleError(res, error);
+    }
+});
+
+
+// --- 5. การเริ่ม Server ---
+app.listen(PORT, () => {
+    console.log(`Backend server is running on http://localhost:${PORT}`);
+});
