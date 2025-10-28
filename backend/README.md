@@ -21,7 +21,7 @@ npm install express mysql2 cors bcryptjs dotenv
 
 1.  เปิดโปรแกรมจัดการฐานข้อมูลของคุณ (เช่น phpMyAdmin, MySQL Workbench, หรือผ่าน Command Line)
 2.  สร้างฐานข้อมูลชื่อ `time_attendance_db` (หรือชื่ออื่นตามต้องการ)
-3.  นำเข้า (Import) ไฟล์ `database.sql` ที่อยู่ในโฟลเดอร์นี้เพื่อสร้างตารางและข้อมูลเริ่มต้น
+3.  นำเข้า (Import) ไฟล์ `TLdb.sql` ที่อยู่ในโฟลเดอร์นี้เพื่อสร้างตารางและข้อมูลเริ่มต้น
 
 ### 4. สร้างไฟล์ Environment Variables (`.env`)
 
