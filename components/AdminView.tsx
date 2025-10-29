@@ -2,19 +2,109 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import type { TimeLog, User, Shift, GeolocationSettings } from '../types';
 import { POSITIONS, STAFF_TYPES, WORK_GROUPS } from '../constants';
-import { SettingsIcon, UserPlusIcon, ReportIcon, DownloadIcon } from './icons';
+import { SettingsIcon, UserPlusIcon, ReportIcon, DownloadIcon, EditIcon, TrashIcon } from './icons';
 
 // @ts-ignore
 const XLSX = window.XLSX;
 
 
-const UserManagement = ({ users, onAddUser }: { users: User[], onAddUser: (user: Omit<User, 'id' | 'role'>) => Promise<void> }) => {
+const EditUserModal = ({ user, onClose, onSave }: {
+    user: User;
+    onClose: () => void;
+    onSave: (userId: number | string, data: Partial<User>) => Promise<void>;
+}) => {
+    const [formData, setFormData] = useState({
+        firstName: user.firstName,
+        lastName: user.lastName,
+        position: user.position,
+        staffType: user.staffType,
+        workGroup: user.workGroup,
+        password: '',
+    });
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSaving(true);
+        setError(null);
+        
+        const dataToSave: Partial<User> = {
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            position: formData.position,
+            staffType: formData.staffType,
+            workGroup: formData.workGroup,
+        };
+        if (formData.password.trim()) {
+            dataToSave.password = formData.password.trim();
+        }
+
+        try {
+            await onSave(user.id, dataToSave);
+        } catch (err: any) {
+            setError(err.message || "เกิดข้อผิดพลาดในการบันทึก");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="edit-user-title">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg">
+                <h3 id="edit-user-title" className="text-xl font-semibold mb-4 text-gray-800">แก้ไขข้อมูล: {user.firstName} {user.lastName}</h3>
+                <p className="text-sm text-gray-500 mb-4">ชื่อผู้ใช้: {user.username}</p>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    {error && <div className="p-3 text-sm text-red-700 bg-red-100 rounded-md">{error}</div>}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input type="text" name="firstName" value={formData.firstName} onChange={handleChange} placeholder="ชื่อ" className="w-full px-3 py-2 border rounded-md" required />
+                        <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} placeholder="นามสกุล" className="w-full px-3 py-2 border rounded-md" required />
+                    </div>
+                    <div>
+                        <input type="password" name="password" value={formData.password} onChange={handleChange} placeholder="รหัสผ่านใหม่ (ปล่อยว่างไว้ถ้าไม่ต้องการเปลี่ยน)" className="w-full px-3 py-2 border rounded-md" />
+                    </div>
+                    <select name="position" value={formData.position} onChange={handleChange} className="w-full px-3 py-2 border rounded-md">
+                        {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <select name="staffType" value={formData.staffType} onChange={handleChange} className="w-full px-3 py-2 border rounded-md">
+                        {STAFF_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <select name="workGroup" value={formData.workGroup} onChange={handleChange} className="w-full px-3 py-2 border rounded-md">
+                        {WORK_GROUPS.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button type="button" onClick={onClose} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition duration-300">
+                            ยกเลิก
+                        </button>
+                        <button type="submit" disabled={isSaving} className="py-2 px-4 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-primary-300 transition duration-300">
+                            {isSaving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+
+const UserManagement = ({ users, onAddUser, onUpdateUser, onDeleteUser }: { 
+    users: User[], 
+    onAddUser: (user: Omit<User, 'id' | 'role'>) => Promise<void>,
+    onUpdateUser: (userId: number | string, userData: Partial<User>) => Promise<void>,
+    onDeleteUser: (userId: number | string) => Promise<void>
+}) => {
     const [newUser, setNewUser] = useState({
         username: '', password: '', firstName: '', lastName: '', 
         position: POSITIONS[0], staffType: STAFF_TYPES[0], workGroup: WORK_GROUPS[0]
     });
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
+
 
     const handleAddUser = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -37,6 +127,21 @@ const UserManagement = ({ users, onAddUser }: { users: User[], onAddUser: (user:
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setNewUser(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    };
+
+    const handleSaveEdit = async (userId: number | string, userData: Partial<User>) => {
+        await onUpdateUser(userId, userData);
+        setEditingUser(null);
+    };
+
+    const handleDelete = async (userId: number | string) => {
+        if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้นี้? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
+            try {
+                await onDeleteUser(userId);
+            } catch (error) {
+                console.error("Deletion failed on component level", error);
+            }
+        }
     };
     
     return (
@@ -72,20 +177,32 @@ const UserManagement = ({ users, onAddUser }: { users: User[], onAddUser: (user:
                                 <th className="p-3">ชื่อ-นามสกุล</th>
                                 <th className="p-3">ตำแหน่ง</th>
                                 <th className="p-3">ประเภท</th>
+                                <th className="p-3">การกระทำ</th>
                             </tr>
                         </thead>
                         <tbody>
                             {users.filter(u => u.role === 'employee').map(user => (
-                                <tr key={user.id} className="border-b">
+                                <tr key={user.id} className="border-b hover:bg-slate-50">
                                     <td className="p-3">{user.firstName} {user.lastName}</td>
                                     <td className="p-3">{user.position}</td>
                                     <td className="p-3">{user.staffType}</td>
+                                    <td className="p-3">
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setEditingUser(user)} className="text-blue-600 hover:text-blue-800 p-1" title="แก้ไข">
+                                                <EditIcon className="w-5 h-5" />
+                                            </button>
+                                            <button onClick={() => handleDelete(user.id)} className="text-red-600 hover:text-red-800 p-1" title="ลบ">
+                                                <TrashIcon className="w-5 h-5" />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
             </div>
+            {editingUser && <EditUserModal user={editingUser} onClose={() => setEditingUser(null)} onSave={handleSaveEdit} />}
         </div>
     );
 };
@@ -339,7 +456,7 @@ const Report = ({ logs, users, shifts }: { logs: TimeLog[], users: User[], shift
 };
 
 
-export const AdminView = ({ users, logs, shifts, geoSettings, onLogout, onAddUser, onSaveShifts, onSaveGeoSettings }: {
+export const AdminView = ({ users, logs, shifts, geoSettings, onLogout, onAddUser, onSaveShifts, onSaveGeoSettings, onUpdateUser, onDeleteUser }: {
     users: User[],
     logs: TimeLog[],
     shifts: Shift[],
@@ -348,6 +465,8 @@ export const AdminView = ({ users, logs, shifts, geoSettings, onLogout, onAddUse
     onAddUser: (user: Omit<User, 'id' | 'role'>) => Promise<void>,
     onSaveShifts: (shifts: Shift[]) => Promise<void>,
     onSaveGeoSettings: (settings: GeolocationSettings) => Promise<void>,
+    onUpdateUser: (userId: number | string, userData: Partial<User>) => Promise<void>,
+    onDeleteUser: (userId: number | string) => Promise<void>,
 }) => {
     const [activeTab, setActiveTab] = useState('report');
 
@@ -384,7 +503,7 @@ export const AdminView = ({ users, logs, shifts, geoSettings, onLogout, onAddUse
             </div>
 
             <div>
-                {activeTab === 'users' && <UserManagement users={users} onAddUser={onAddUser} />}
+                {activeTab === 'users' && <UserManagement users={users} onAddUser={onAddUser} onUpdateUser={onUpdateUser} onDeleteUser={onDeleteUser} />}
                 {activeTab === 'settings' && <Settings initialShifts={shifts} initialGeoSettings={geoSettings} onSaveShifts={onSaveShifts} onSaveGeoSettings={onSaveGeoSettings} />}
                 {activeTab === 'report' && <Report logs={logs} users={users} shifts={shifts} />}
             </div>

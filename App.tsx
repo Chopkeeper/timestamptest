@@ -117,6 +117,42 @@ const App = () => {
         }
     }, []);
 
+    const handleUpdateUser = useCallback(async (userId: number | string, userData: Partial<User>): Promise<void> => {
+        try {
+            const response = await fetch(`${API_URL}/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userData),
+            });
+            const updatedUser = await response.json();
+            if (!response.ok) {
+                throw new Error(updatedUser.error || 'Failed to update user');
+            }
+            setUsers(prev => prev.map(u => u.id === userId ? updatedUser : u));
+        } catch (error: any) {
+            console.error(error);
+            alert(error.message);
+            throw error;
+        }
+    }, []);
+
+    const handleDeleteUser = useCallback(async (userId: number | string): Promise<void> => {
+        try {
+            const response = await fetch(`${API_URL}/users/${userId}`, {
+                method: 'DELETE',
+            });
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to delete user');
+            }
+            setUsers(prev => prev.filter(u => u.id !== userId));
+        } catch (error: any) {
+            console.error(error);
+            alert(error.message);
+            throw error;
+        }
+    }, []);
+
     const handleClock = useCallback(async (logData: Omit<TimeLog, 'id'>): Promise<void> => {
         const response = await fetch(`${API_URL}/timelogs`, {
             method: 'POST',
@@ -180,6 +216,8 @@ const App = () => {
             onAddUser={handleAddUserByAdmin}
             onSaveGeoSettings={handleSaveGeoSettings}
             onSaveShifts={handleSaveShifts}
+            onUpdateUser={handleUpdateUser}
+            onDeleteUser={handleDeleteUser}
         />;
     }
     
