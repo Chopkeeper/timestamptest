@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import type { TimeLog, User, Shift, GeolocationSettings } from '../types';
 import { POSITIONS, STAFF_TYPES, WORK_GROUPS } from '../constants';
@@ -46,6 +45,7 @@ const EditUserModal = ({ user, onClose, onSave }: {
 
         try {
             await onSave(user.id, dataToSave);
+            onClose(); // Close modal on success
         } catch (err: any) {
             setError(err.message || "เกิดข้อผิดพลาดในการบันทึก");
         } finally {
@@ -130,9 +130,15 @@ const UserManagement = ({ users, onAddUser, onUpdateUser, onDeleteUser }: {
     };
 
     const handleSaveEdit = async (userId: number | string, userData: Partial<User>) => {
-        await onUpdateUser(userId, userData);
-        setEditingUser(null);
+        try {
+           await onUpdateUser(userId, userData);
+           setEditingUser(null);
+        } catch (error) {
+            // Error is handled in the modal, but you could log it here too
+            console.error("Failed to save user edit:", error);
+        }
     };
+
 
     const handleDelete = async (userId: number | string) => {
         if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้นี้? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
@@ -140,6 +146,7 @@ const UserManagement = ({ users, onAddUser, onUpdateUser, onDeleteUser }: {
                 await onDeleteUser(userId);
             } catch (error) {
                 console.error("Deletion failed on component level", error);
+                alert("Failed to delete user."); // Show feedback
             }
         }
     };
@@ -207,15 +214,21 @@ const UserManagement = ({ users, onAddUser, onUpdateUser, onDeleteUser }: {
     );
 };
 
-const Settings = ({ initialShifts, initialGeoSettings, onSaveShifts, onSaveGeoSettings }: {
+const Settings = ({ initialShifts, initialGeoSettings, onSaveShifts, onSaveGeoSettings, onUpdateAdminPassword }: {
     initialShifts: Shift[],
     initialGeoSettings: GeolocationSettings,
     onSaveShifts: (shifts: Shift[]) => Promise<void>,
-    onSaveGeoSettings: (settings: GeolocationSettings) => Promise<void>
+    onSaveGeoSettings: (settings: GeolocationSettings) => Promise<void>,
+    onUpdateAdminPassword: (newPassword: string) => Promise<void>
 }) => {
     const [shifts, setShifts] = useState(initialShifts);
     const [geoSettings, setGeoSettings] = useState(initialGeoSettings);
     const [isLoading, setIsLoading] = useState(false);
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [passwordError, setPasswordError] = useState<string | null>(null);
+    const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+    const [isSavingPassword, setIsSavingPassword] = useState(false);
 
     useEffect(() => { setShifts(initialShifts) }, [initialShifts]);
     useEffect(() => { setGeoSettings(initialGeoSettings) }, [initialGeoSettings]);
@@ -253,8 +266,53 @@ const Settings = ({ initialShifts, initialGeoSettings, onSaveShifts, onSaveGeoSe
         }
     };
 
+    const handlePasswordSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setPasswordError(null);
+        setPasswordSuccess(null);
+
+        if (!newPassword) {
+            setPasswordError("กรุณากรอกรหัสผ่านใหม่");
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setPasswordError("รหัสผ่านไม่ตรงกัน");
+            return;
+        }
+
+        setIsSavingPassword(true);
+        try {
+            await onUpdateAdminPassword(newPassword);
+            setPasswordSuccess("เปลี่ยนรหัสผ่านสำเร็จ!");
+            setNewPassword('');
+            setConfirmPassword('');
+        } catch (err: any) {
+            setPasswordError(err.message || "เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน");
+        } finally {
+            setIsSavingPassword(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
+            <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
+                <h3 className="text-xl font-semibold text-gray-700">เปลี่ยนรหัสผ่านผู้ดูแลระบบ</h3>
+                <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                    {passwordError && <div className="p-3 text-sm text-red-700 bg-red-100 rounded-md">{passwordError}</div>}
+                    {passwordSuccess && <div className="p-3 text-sm text-green-700 bg-green-100 rounded-md">{passwordSuccess}</div>}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-600">รหัสผ่านใหม่</label>
+                        <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full mt-1 px-3 py-2 border rounded-md" placeholder="กรอกรหัสผ่านใหม่อย่างน้อย 4 ตัวอักษร" />
+                    </div>
+                     <div>
+                        <label className="block text-sm font-medium text-gray-600">ยืนยันรหัสผ่านใหม่</label>
+                        <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full mt-1 px-3 py-2 border rounded-md" placeholder="กรอกรหัสผ่านใหม่อีกครั้ง" />
+                    </div>
+                    <button type="submit" disabled={isSavingPassword} className="w-full bg-slate-600 text-white py-2 px-4 rounded-md hover:bg-slate-700 transition duration-300 disabled:bg-slate-300">
+                        {isSavingPassword ? "กำลังบันทึก..." : "บันทึกรหัสผ่านใหม่"}
+                    </button>
+                </form>
+            </div>
             <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
                 <h3 className="text-xl font-semibold text-gray-700">ตั้งค่าพื้นที่เช็คอิน</h3>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -339,9 +397,10 @@ const Report = ({ logs, users, shifts }: { logs: TimeLog[], users: User[], shift
             const afternoonShift = shifts.find(s => s.name === 'กะบ่าย'); // 16:30
             const nightShift = shifts.find(s => s.name === 'กะดึก'); // 00:30
 
-            if (inHour >= 4 && inHour < 12 && morningShift) shift = morningShift;
-            else if (inHour >= 12 && inHour < 20 && afternoonShift) shift = afternoonShift;
-            else shift = nightShift;
+            // Improved Shift Detection Logic
+            if (inHour >= 6 && inHour < 14 && morningShift) shift = morningShift;      // Shift 1: Morning (e.g., 08:30 start) -> Check-in window 06:00 - 13:59
+            else if (inHour >= 14 && inHour < 22 && afternoonShift) shift = afternoonShift; // Shift 2: Afternoon (e.g., 16:30 start) -> Check-in window 14:00 - 21:59
+            else shift = nightShift;                                                // Shift 3: Night (e.g., 00:30 start) -> Catches the rest (22:00 - 05:59)
             
             if (!shift) return null; // Or handle as an error
 
@@ -456,7 +515,7 @@ const Report = ({ logs, users, shifts }: { logs: TimeLog[], users: User[], shift
 };
 
 
-export const AdminView = ({ users, logs, shifts, geoSettings, onLogout, onAddUser, onSaveShifts, onSaveGeoSettings, onUpdateUser, onDeleteUser }: {
+export const AdminView = ({ users, logs, shifts, geoSettings, onLogout, onAddUser, onSaveShifts, onSaveGeoSettings, onUpdateUser, onDeleteUser, onUpdateAdminPassword }: {
     users: User[],
     logs: TimeLog[],
     shifts: Shift[],
@@ -467,6 +526,7 @@ export const AdminView = ({ users, logs, shifts, geoSettings, onLogout, onAddUse
     onSaveGeoSettings: (settings: GeolocationSettings) => Promise<void>,
     onUpdateUser: (userId: number | string, userData: Partial<User>) => Promise<void>,
     onDeleteUser: (userId: number | string) => Promise<void>,
+    onUpdateAdminPassword: (newPassword: string) => Promise<void>,
 }) => {
     const [activeTab, setActiveTab] = useState('report');
 
@@ -504,7 +564,7 @@ export const AdminView = ({ users, logs, shifts, geoSettings, onLogout, onAddUse
 
             <div>
                 {activeTab === 'users' && <UserManagement users={users} onAddUser={onAddUser} onUpdateUser={onUpdateUser} onDeleteUser={onDeleteUser} />}
-                {activeTab === 'settings' && <Settings initialShifts={shifts} initialGeoSettings={geoSettings} onSaveShifts={onSaveShifts} onSaveGeoSettings={onSaveGeoSettings} />}
+                {activeTab === 'settings' && <Settings initialShifts={shifts} initialGeoSettings={geoSettings} onSaveShifts={onSaveShifts} onSaveGeoSettings={onSaveGeoSettings} onUpdateAdminPassword={onUpdateAdminPassword} />}
                 {activeTab === 'report' && <Report logs={logs} users={users} shifts={shifts} />}
             </div>
         </div>

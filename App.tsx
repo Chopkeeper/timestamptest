@@ -1,11 +1,13 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import type { User, TimeLog, Shift, GeolocationSettings } from './types';
 import { LoginView, RegisterView } from './components/AuthView';
 import { EmployeeView } from './components/EmployeeView';
 import { AdminView } from './components/AdminView';
 
-const API_URL = 'http://localhost:3001/api'; // URL ของ Backend Server
+// --- !!! สำคัญ: แก้ไข IP Address ตรงนี้ !!! ---
+// 1. หา IP Address ของคอมพิวเตอร์ที่รัน Backend Server (ใช้คำสั่ง ipconfig ใน cmd)
+// 2. นำ IP Address ที่ได้ (เช่น 192.168.1.105) มาใส่แทนที่ "your_computer_ip_address"
+const API_URL = 'http://your_computer_ip_address:3001/api'; 
 
 const App = () => {
     const [users, setUsers] = useState<User[]>([]);
@@ -131,10 +133,27 @@ const App = () => {
             setUsers(prev => prev.map(u => u.id === userId ? updatedUser : u));
         } catch (error: any) {
             console.error(error);
-            alert(error.message);
+            throw error;
+        }
+    }, [setUsers]);
+
+    const handleUpdateAdminPassword = useCallback(async (newPassword: string): Promise<void> => {
+        try {
+            const response = await fetch(`${API_URL}/admin/password`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newPassword }),
+            });
+             if (!response.ok) {
+                const result = await response.json().catch(() => ({ error: 'An unexpected error occurred.' }));
+                throw new Error(result.error || 'Failed to update admin password');
+            }
+        } catch (error: any) {
+            console.error(error);
             throw error;
         }
     }, []);
+
 
     const handleDeleteUser = useCallback(async (userId: number | string): Promise<void> => {
         try {
@@ -151,7 +170,7 @@ const App = () => {
             alert(error.message);
             throw error;
         }
-    }, []);
+    }, [setUsers]);
 
     const handleClock = useCallback(async (logData: Omit<TimeLog, 'id'>): Promise<void> => {
         const response = await fetch(`${API_URL}/timelogs`, {
@@ -218,6 +237,7 @@ const App = () => {
             onSaveShifts={handleSaveShifts}
             onUpdateUser={handleUpdateUser}
             onDeleteUser={handleDeleteUser}
+            onUpdateAdminPassword={handleUpdateAdminPassword}
         />;
     }
     

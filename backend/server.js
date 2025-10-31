@@ -1,4 +1,3 @@
-
 // server.js
 // นี่คือ Backend Server ที่สร้างด้วย Node.js และ Express
 // เพื่อทำงานร่วมกับ Frontend ที่มีอยู่
@@ -119,6 +118,25 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// [PUT] /api/admin/password - อัปเดตรหัสผ่านของ Admin
+app.put('/api/admin/password', async (req, res) => {
+    try {
+        const { newPassword } = req.body;
+        if (!newPassword || newPassword.trim().length < 4) {
+             return res.status(400).json({ error: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 4 ตัวอักษร' });
+        }
+        const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
+        await dbPool.execute(
+            'UPDATE users SET password = ? WHERE username = ?',
+            [hashedPassword, 'admin']
+        );
+        res.json({ message: 'Admin password updated successfully' });
+    } catch (error) {
+        handleError(res, error);
+    }
+});
+
+
 // [PUT] /api/users/:userId - อัปเดตข้อมูลผู้ใช้ (สำหรับ Admin)
 app.put('/api/users/:userId', async (req, res) => {
     try {
@@ -159,10 +177,13 @@ app.delete('/api/users/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
 
-        if (userId === '1') {
-            return res.status(403).json({ error: 'ไม่สามารถลบบัญชีผู้ดูแลระบบหลักได้' });
+        // ตรวจสอบว่าผู้ใช้ที่พยายามลบคือ admin หลักหรือไม่
+        const [userRows] = await dbPool.execute('SELECT username FROM users WHERE id = ?', [userId]);
+        if (userRows.length > 0 && userRows[0].username === 'admin') {
+             return res.status(403).json({ error: 'ไม่สามารถลบบัญชีผู้ดูแลระบบหลักได้' });
         }
 
+        await dbPool.execute('DELETE FROM time_logs WHERE userId = ?', [userId]); // ควรลบ log ที่เกี่ยวข้องด้วย
         await dbPool.execute('DELETE FROM users WHERE id = ?', [userId]);
         
         res.status(200).json({ message: 'User deleted successfully' });

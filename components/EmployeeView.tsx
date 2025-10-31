@@ -25,6 +25,9 @@ export const EmployeeView = ({ user, logs, onLogout, geoSettings, onClock }: {
     const [confirmationMessage, setConfirmationMessage] = useState<ConfirmationMessage | null>(null);
     const location = useGeolocation();
     
+    // ตรวจสอบว่าเป็น error เกี่ยวกับ HTTPS หรือไม่
+    const isSecurityError = location.error && location.error.includes('HTTPS');
+
     useEffect(() => {
         const timer = setInterval(() => setTime(new Date()), 1000);
         return () => clearInterval(timer);
@@ -43,7 +46,7 @@ export const EmployeeView = ({ user, logs, onLogout, geoSettings, onClock }: {
         const timeDiff = Date.now() - userLastLog.timestamp;
         const fourHoursInMillis = 4 * 60 * 60 * 1000;
         return timeDiff >= fourHoursInMillis;
-    }, [isClockedIn, userLastLog, time]);
+    }, [isClockedIn, userLastLog]);
 
     const distance = useMemo(() => {
         if (location.latitude && location.longitude && geoSettings.center) {
@@ -161,16 +164,25 @@ export const EmployeeView = ({ user, logs, onLogout, geoSettings, onClock }: {
                     {time.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
                 </div>
                 
-                 <div className={`flex items-center justify-center gap-2 p-3 rounded-md mb-6 ${isInArea ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                    {isInArea ? <LocationOnIcon className="w-6 h-6"/> : <LocationOffIcon className="w-6 h-6"/>}
-                    <span className="font-semibold">
-                        {
-                            location.error ? 'ข้อผิดพลาด: ' + location.error :
-                            distance === null ? 'กำลังระบุตำแหน่ง...' :
-                            isInArea ? `คุณอยู่ในพื้นที่ (ห่าง ${distance.toFixed(0)} ม.)` : `คุณอยู่นอกพื้นที่ (ห่าง ${distance.toFixed(0)} ม.)`
-                        }
-                    </span>
-                </div>
+                {isSecurityError ? (
+                    <div className="p-4 rounded-md mb-6 bg-red-100 text-red-800 border border-red-200 text-left">
+                        <h3 className="font-bold text-lg">ข้อผิดพลาดด้านความปลอดภัย</h3>
+                        <p className="mt-1">{location.error}</p>
+                        <p className="mt-2 text-sm">นี่เป็นข้อกำหนดของเบราว์เซอร์ กรุณาติดต่อผู้ดูแลระบบเพื่อเปิดใช้งานการเชื่อมต่อแบบ HTTPS สำหรับเว็บไซต์นี้</p>
+                    </div>
+                ) : (
+                    <div className={`flex items-center justify-center gap-2 p-3 rounded-md mb-6 ${isInArea ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                        {isInArea ? <LocationOnIcon className="w-6 h-6"/> : <LocationOffIcon className="w-6 h-6"/>}
+                        <span className="font-semibold">
+                            {
+                                location.error ? 'ข้อผิดพลาด: ' + location.error :
+                                distance === null ? 'กำลังระบุตำแหน่ง...' :
+                                isInArea ? `คุณอยู่ในพื้นที่ (ห่าง ${distance.toFixed(0)} ม.)` : `คุณอยู่นอกพื้นที่ (ห่าง ${distance.toFixed(0)} ม.)`
+                            }
+                        </span>
+                    </div>
+                )}
+
 
                 <div className="grid grid-cols-2 gap-4">
                     <button 
