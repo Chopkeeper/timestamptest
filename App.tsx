@@ -4,10 +4,9 @@ import { LoginView, RegisterView } from './components/AuthView';
 import { EmployeeView } from './components/EmployeeView';
 import { AdminView } from './components/AdminView';
 
-// --- !!! สำคัญ: แก้ไข IP Address ตรงนี้ !!! ---
-// 1. หา IP Address ของคอมพิวเตอร์ที่รัน Backend Server (ใช้คำสั่ง ipconfig ใน cmd)
-// 2. นำ IP Address ที่ได้ (เช่น 192.168.1.105) มาใส่แทนที่ "your_computer_ip_address"
-const API_URL = 'http://your_computer_ip_address:3001/api'; 
+// --- API URL ---
+// หาก Backend server รันบนเครื่องอื่นในเครือข่าย, ให้เปลี่ยน 'localhost' เป็น IP Address ของเครื่องนั้น
+const API_URL = 'http://localhost:3001/api'; 
 
 const App = () => {
     const [users, setUsers] = useState<User[]>([]);
