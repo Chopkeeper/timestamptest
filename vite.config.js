@@ -10,6 +10,12 @@ export default defineConfig({
   ],
   server: {
     // ทำให้สามารถเข้าถึงจาก IP Address ในเครือข่ายเดียวกันได้
-    host: true, 
+    host: true,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
   }
 })

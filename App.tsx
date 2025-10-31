@@ -5,8 +5,8 @@ import { EmployeeView } from './components/EmployeeView';
 import { AdminView } from './components/AdminView';
 
 // --- API URL ---
-// หาก Backend server รันบนเครื่องอื่นในเครือข่าย, ให้เปลี่ยน 'localhost' เป็น IP Address ของเครื่องนั้น
-const API_URL = 'http://localhost:3001/api'; 
+// The Vite proxy will forward requests from /api to the backend server.
+const API_URL = '/api';
 
 const App = () => {
     const [users, setUsers] = useState<User[]>([]);
